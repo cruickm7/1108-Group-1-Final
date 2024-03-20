@@ -1,0 +1,339 @@
+<!DOCTYPE aesl-source>
+<network>
+
+
+<!--list of global events-->
+
+
+<!--list of constants-->
+<constant value="3000" name="THRESH"/>
+<constant value="2650" name="THRESHSIDE"/>
+
+
+<!--show keywords state-->
+<keywords flag="true"/>
+
+
+<!--node thymio-II-->
+<node nodeId="1" name="thymio-II">var scanResult[3] = [0, 0, 0]
+var scanThresh = 3000
+var scanThreshSide = 2650
+var doScan = 0
+var phase = 0
+var subPhase = 1
+var openGate = 0
+var openExit = 0
+var findLine = 0
+var TARGET = 100
+var EDGE = 300
+var TIME90 = 2500
+var turnTime = 2500
+var halt = 0
+var ground[2]
+var horizontal[5]
+var max
+var mean
+var min
+var adjust90 = 0
+var tripleLine = 0
+var lineCount = 0
+var findWall = 0
+var findExit = 0
+call leds.circle(0, 0, 0, 0, 0, 0, 0, 0)
+
+
+onevent button.forward
+	call leds.circle(0, 0, 0, 0, 0, 0, 0, 0)
+	openExit = 0
+	openGate = 0
+	findExit = 0
+	findLine = 0
+	findWall = 0
+	subPhase = 1
+	phase = 1
+	
+	
+onevent button.left
+	callsub Scan
+onevent button.backward
+	call leds.circle(0, 0, 0, 0, 0, 0, 0, 0)
+	openExit = 0
+	openGate = 0
+	findExit = 0
+	findLine = 0
+	findWall = 0
+	callsub Stop
+	phase = 0
+	subPhase = 0
+	
+onevent prox
+	ground = prox.ground.reflected[0:1]
+	horizontal = prox.horizontal[0:4]
+	call math.stat(prox.horizontal[0:4], min, max, mean)
+	
+	if phase == 1 then	#start to first wall scan
+	
+		if subPhase == 1 then		#forward to find line and wall	
+			findLine = 1
+			
+		elseif subPhase == 2 then	#adjust flat to wall
+			adjust90 = 1
+			
+		elseif subPhase == 3 then	#reverse a bit for scanner
+			turnTime = 300
+			callsub Back
+			
+		elseif subPhase == 4 then	#scan wall for gate direction
+			callsub Scan
+			if scanResult[0] > scanResult[2] then
+				openGate = -1
+			else
+				openGate = 1
+			end
+		
+		elseif subPhase == 5 then
+			phase += 1
+			subPhase = 1
+		end
+	end
+	if phase == 2 then	#first wall to second wall scan
+		if subPhase == 1 then		#turn to open age direction
+			turnTime = TIME90
+			if openGate == -1 then
+				callsub Left
+			else
+				callsub Right
+			end
+		 
+		elseif subPhase == 2 then	#forward to find line and wall
+			callsub Forward
+			findLine = 1
+			
+		elseif subPhase == 3 then	#adjust flat to wall
+			adjust90 = 1
+		elseif subPhase == 4 then
+			turnTime = 300
+			callsub Back
+			
+		elseif subPhase == 4 then	#scan wall for exit direction
+			callsub Scan
+			if scanResult[0] > scanResult[2] then
+				openExit = -1
+			else
+				openExit = 1
+			end
+		elseif subPhase == 5 then	
+			phase += 1
+			subPhase = 1
+		end
+	end
+						
+	if phase == 3 then	#second wall to third wall and turn to 3 lines
+		if  subPhase == 1 then		#turn toward third wall
+			turnTime = TIME90
+			if openGate == -1 then
+				callsub Right
+			else
+				callsub Left
+			end
+		elseif subPhase == 2 then	#forward to find line and wall
+			callsub Forward
+			findLine = 1
+			
+		elseif subPhase == 3 then	#turn toward 3 line area
+			if  openGate == -1 then
+				callsub Right
+			else
+				callsub Left
+			end
+			
+		elseif subPhase == 4 then	#Forward 3 line area
+			timer.period[0] = 5000
+			callsub Forward
+			
+		elseif subPhase == 5 then	#align to 3 lines
+			if openGate == -1 then
+				callsub Left
+			else
+				callsub Right
+			end
+		elseif subPhase == 6 then
+			phase += 1
+			subPhase = 1
+		end
+	end
+	if phase == 4 then	#pass 3 lines to find wall and turn to exit
+		if subPhase == 1 then		#Forward to find the lines
+			callsub Forward
+			tripleLine = 1
+			
+		elseif subPhase == 2 then	#Stop and beep
+			callsub Stop
+			timer.period[0] = 5000
+			#call sound.play(1)
+			
+		elseif subPhase == 3 then	#Forward to find the wall
+			callsub Forward
+			findWall = 1
+			
+		elseif subPhase == 4 then	#adjust flat to wall
+			adjust90 = 1
+			
+		elseif subPhase == 5 then	#turn to exit direction
+		turnTime = TIME90
+			if openExit == -1 then
+				callsub Left
+			else
+				callsub Right	
+			end
+			
+		elseif subPhase == 6 then	#forward a bit
+			callsub Forward
+			timer.period[0] = 2000
+			
+		elseif subPhase == 7 then
+			phase += 1
+			subPhase = 1
+		end
+	end
+	
+	if phase == 5 then
+		if subPhase == 1 then
+			findExit = 1
+		elseif subPhase == 2 then
+			callsub Stop
+		end
+	end
+	
+	if findExit == 1 then
+		when ground[0] &lt; EDGE and ground[1] > EDGE  do
+			motor.left.target = 0
+			motor.right.target = TARGET
+			timer.period[0] = 0
+		end
+		when ground[0] > EDGE and ground[1] &lt; EDGE do
+			motor.left.target = TARGET
+			motor.right.target = 0
+			timer.period[0] = 0
+		end
+		when ground[0] > EDGE and ground[1] > EDGE do
+			motor.left.target = TARGET
+			motor.right.target = TARGET
+			timer.period[0] = 1000
+		end
+	end
+	
+	if adjust90 == 1 then
+			motor.left.target = 0
+			motor.right.target = 0
+		if horizontal[0] > horizontal[4] + 250 then
+			motor.left.target = -50
+			motor.right.target = 50
+		elseif horizontal[0] &lt; horizontal[4] - 250 then
+			motor.left.target = 50
+			motor.right.target = -50
+		else
+			adjust90 = 0
+			subPhase += 1
+		end
+		
+	end
+	if findLine == 1 then
+		when ground[0] &lt; EDGE and ground[1] > EDGE  do
+			motor.left.target = TARGET/2
+			motor.right.target = TARGET
+		end
+		when ground[0] > EDGE and ground[1] &lt; EDGE do
+			motor.left.target = TARGET
+			motor.right.target = TARGET/2
+		end
+		when ground[0] > EDGE and ground[1] > EDGE do
+			motor.left.target = 250
+			motor.right.target = 250
+		end
+		if (ground[0] &lt; EDGE and ground[1] &lt; EDGE) or max > 4500 then
+			motor.left.target = 0
+			motor.right.target = 0
+			findLine = 0
+			subPhase += 1
+		end
+	end
+	
+	if findWall == 1 then
+		if max > 4000 then
+			motor.left.target = 0
+			motor.right.target = 0
+			findWall = 0
+			subPhase += 1
+		end
+	end
+	
+	if tripleLine != 0 then
+		when ground[0] &lt; 300 do
+			lineCount += 1
+		end
+		if lineCount == 3 then
+			tripleLine = 0
+			lineCount = 0
+			subPhase += 1
+		end
+	end
+	
+
+sub Forward
+	motor.left.target = 250
+	motor.right.target = 250
+	
+sub Left
+	motor.left.target = -TARGET
+	motor.right.target = TARGET
+	timer.period[0] = turnTime
+	
+sub Right
+	motor.left.target = TARGET
+	motor.right.target = -TARGET
+	timer.period[0] = turnTime
+	
+sub Stop
+	motor.left.target = 0
+	motor.right.target = 0
+sub Back
+	motor.left.target = -TARGET
+	motor.right.target = -TARGET
+	timer.period[0] = turnTime
+	
+sub Scan
+	if horizontal[1] > THRESHSIDE then
+			scanResult[0] = 32
+		else
+			scanResult[0] = 0	
+		end
+		if horizontal[2] > THRESH then
+			scanResult[1] = 32
+		else
+			scanResult[1] = 0	
+		end
+		if horizontal[3] > THRESHSIDE then
+			scanResult[2] = 32
+		else
+			scanResult[2] = 0	
+		end
+		doScan = 0
+		subPhase += 1
+	call leds.circle(scanResult[1], scanResult[2], 0, 0, 0, 0, 0, scanResult[0])
+	
+	
+onevent timer0
+	motor.left.target = 0
+	motor.right.target = 0
+	subPhase += 1
+	timer.period[0] = 0
+	
+onevent timer1
+
+
+
+</node>
+
+
+</network>
