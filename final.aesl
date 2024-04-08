@@ -6,12 +6,11 @@
 
 
 <!--list of constants-->
-<constant value="4000" name="THRESH"/>
+<constant value="3500" name="THRESH"/>
 <constant value="2650" name="THRESHSIDE"/>
 <constant value="300" name="EDGE"/>
-<constant value="2500" name="TIME90"/>
 <constant value="100" name="TARGET"/>
-<constant value="500" name="FTARGET"/>
+<constant value="250" name="FTARGET"/>
 
 
 <!--show keywords state-->
@@ -29,16 +28,20 @@ var openExit = 0
 var turnTime = 2500
 var ground[2]
 var horizontal[5]
+var mid[3]
 var max
 var mean
 var min
-var adjust90 = 0
+var adjustFlat = 0
 var tripleLine = 0
 var lineCount = 0
 var findLine = 0
 var findWall = 0
 var findExit = 0
 var beep = 0
+var fLED[3] = [0, 0, 0]
+var i
+var TIME90 = 2500 / (FTARGET/250)
 call leds.circle(0, 0, 0, 0, 0, 0, 0, 0)
 
 onevent button.forward
@@ -52,9 +55,19 @@ onevent button.forward
 	subPhase = 1
 	phase = 1
 	
-	
 onevent button.left
-	callsub Scan
+	#findWall = 1
+	#callsub Scan3
+	phase = 3
+	subPhase = 1
+	openGate = 1
+	
+onevent button.right
+	#findWall = 1
+	#findLine = 1
+	callsub Left
+	turnTime = TIME90 
+	
 onevent button.backward
 	callsub Stop
 	call leds.circle(0, 0, 0, 0, 0, 0, 0, 0)
@@ -69,7 +82,7 @@ onevent button.backward
 onevent prox
 	ground = prox.ground.reflected[0:1]
 	horizontal = prox.horizontal[0:4]
-	call math.stat(prox.horizontal[0:4], min, max, mean)
+	call math.stat(prox.horizontal[1:3], min, max, mean)
 	
 	if phase == 1 then	#start to first wall scan
 	
@@ -78,7 +91,7 @@ onevent prox
 			findLine = 1
 			
 		elseif subPhase == 2 then	#adjust flat to wall
-			adjust90 = 1
+			adjustFlat = 1
 			
 		elseif subPhase == 3 then	#reverse a bit for scanner
 			#turnTime = 300
@@ -102,12 +115,12 @@ onevent prox
 	end
 	
 	if phase == 2 then	#first wall to second wall scan
-		if subPhase == 1 then		#turn to open age direction
+		if subPhase == 1 then		#turn to open gate direction
 			if openGate == -1 then
-				turnTime = TIME90 - 125
+				turnTime = TIME90 - 0
 				callsub Left
 			else
-				turnTime = TIME90 - 125
+				turnTime = TIME90 + (200/ (FTARGET/250))
 				callsub Right
 			end
 		 
@@ -117,7 +130,7 @@ onevent prox
 			findLine = 1
 			
 		elseif subPhase == 3 then	#adjust flat to wall
-			adjust90 = 1
+			adjustFlat = 1
 			
 		elseif subPhase == 4 then	#scan wall for exit direction
 			callsub Scan2
@@ -128,6 +141,7 @@ onevent prox
 				openExit = 1
 				call leds.circle(0, 0, 32, 0, 0, 0, 0, 0)
 			end
+			
 		elseif subPhase == 5 then	
 			phase += 1
 			subPhase = 1
@@ -137,33 +151,47 @@ onevent prox
 	if phase == 3 then	#second wall to third wall and turn to 3 lines
 		if  subPhase == 1 then		#turn toward third wall
 			if openGate == -1 then
-				turnTime = TIME90
+				turnTime = TIME90 + (5 / (FTARGET/250))
 				callsub Right
 			else
-				turnTime = TIME90
+				turnTime = TIME90 + (5 / (FTARGET/250))
 				callsub Left
 			end
+			
 		elseif subPhase == 2 then	#forward to find line and wall
 			callsub Forward
-			findWall = 1
+			findLine = 1
 			
-		elseif subPhase == 3 then	#turn toward 3 line area
+		elseif subPhase == 3 then
+			#adjustFlat = 1
+			subPhase += 1
+			
+		elseif subPhase == 4 then
+			turnTime = 100
+			callsub Back
+			
+		elseif subPhase == 5 then
+			callsub Scan3
+			
+		elseif subPhase == 6 then	#turn toward 3 line area
 			if  openGate == -1 then
-				turnTime = TIME90
+				turnTime = TIME90 - (200 / (FTARGET/250))
 				callsub Right
 			else
-				turnTime = TIME90
+				turnTime = TIME90 - (200/ (FTARGET/250))
 				callsub Left
 			end
 			
-		elseif subPhase == 4 then	#forward to 3 line area wall
+		elseif subPhase == 7 then	#forward to 3 line area wall
 			callsub Forward
 			findWall = 1
 			
-		elseif subPhase == 5 then	#adjust flat to wall
-			adjust90 = 1
+		elseif subPhase == 8 then	#adjust flat to wall
+			#adjustFlat = 1
+			callsub Back
+			turnTime = 250
 			
-		elseif subPhase == 6 then	#turn to 3 lines
+		elseif subPhase == 9 then	#turn to 3 lines
 			if openGate == -1 then
 				turnTime = TIME90
 				callsub Left
@@ -171,7 +199,8 @@ onevent prox
 				turnTime = TIME90
 				callsub Right
 			end
-		elseif subPhase == 7 then
+			
+		elseif subPhase == 10 then
 			phase += 1
 			subPhase = 1
 		end
@@ -181,21 +210,22 @@ onevent prox
 		if subPhase == 1 then		#Forward to find the lines
 			callsub Forward
 			tripleLine = 1
+			beep = 10
 		
 		elseif subPhase == 2 then	#Stop and beep/flash
 			callsub Stop
-			timer.period[0] = 5000	
-			beep = 1
+			timer.period[0] = 5000
 			timer.period[1] = 500
 		
 		elseif subPhase == 3 then	#Forward to find the wall
+			call leds.circle(0, 0, 0, 0, 0, 0, 0, 0)
 			timer.period[1] = 0
 			call leds.top(0, 0, 0)
 			callsub Forward
 			findWall = 1
 		
 		elseif subPhase == 4 then	#adjust flat to wall
-			adjust90 = 1
+			adjustFlat = 1
 		
 		elseif subPhase == 5 then	#turn to exit direction
 			if openExit == -1 then
@@ -219,10 +249,10 @@ onevent prox
 	if phase == 5 then	#use walls to find exit
 		if subPhase == 1 then		#turn toward far wall
 			if openExit == -1 then
-				turnTime = TIME90
+				turnTime = TIME90 + (100 / (FTARGET/250))
 				callsub Right
 			else
-				turnTime = TIME90
+				turnTime = TIME90 + (100 / (FTARGET/250))
 				callsub Left
 			end
 			
@@ -231,10 +261,11 @@ onevent prox
 			findWall = 1
 			
 		elseif subPhase == 3 then	#adjust flat to wall
-			adjust90 = 1
+			#adjust90 = 1
+			subPhase += 1
 			
 		elseif subPhase == 4 then	#reverse to exit gate
-			turnTime = 4000
+			turnTime = 5000 / (FTARGET/250)
 			callsub Back
 			
 		elseif subPhase == 5 then	#turn to exit gate
@@ -253,39 +284,40 @@ onevent prox
 	end
 	
 	if phase == 6 then	#find exit circle
-		if subPhase == 1 then		#
-			timer.period[0] = 1500
+		if subPhase == 1 then		#forward into exit
+			timer.period[0] = 3000 / (FTARGET/250)
 			callsub Forward
 			
-		elseif subPhase == 2 then
+		elseif subPhase == 2 then	#find exit circle
 			findExit = 1
 			
-		elseif subPhase == 3 then
-			timer.period[0] = 425
+		elseif subPhase == 3 then	#forward a bit to center of circle
+			timer.period[0] = 1500 / (FTARGET/250)
 			callsub Forward
 			
-		elseif subPhase == 4 then
+		elseif subPhase == 4 then	#light up circle leds
 			call leds.circle(32, 32, 32, 32, 32, 32, 32, 32)
+			call leds.top(fLED[0], fLED[1], fLED[2])
 		end
 	end
 	
 	if findExit == 1 then
-		when ground[0] &lt; EDGE and ground[1] > EDGE  do
+		when ground[0] &lt; 600 and ground[1] > 600  do
 			motor.left.target = 0
 			motor.right.target = TARGET
 		end
 		
-		when ground[0] > EDGE and ground[1] &lt; EDGE do
+		when ground[0] > 600 and ground[1] &lt; 600 do
 			motor.left.target = TARGET
 			motor.right.target = 0
 		end
 		
-		when ground[0] > EDGE and ground[1] > EDGE do
+		when ground[0] > 600 and ground[1] > 600 do
 			motor.left.target = TARGET
 			motor.right.target = TARGET
 		end
 		
-		if ground[0] &lt; EDGE and ground[1] &lt; EDGE then
+		if ground[0] &lt; 600 and ground[1] &lt; 600 then
 			motor.left.target = 0
 			motor.right.target = 0
 			findExit = 0
@@ -293,10 +325,9 @@ onevent prox
 		end
 	end
 	
-	if adjust90 == 1 then
+	if adjustFlat == 1 then
 			motor.left.target = 0
 			motor.right.target = 0
-			
 		if horizontal[0] > horizontal[4] + 150 then
 			motor.left.target = -25
 			motor.right.target = 25
@@ -305,26 +336,35 @@ onevent prox
 			motor.left.target = 25
 			motor.right.target = -25
 		else
-			adjust90 = 0
+			adjustFlat = 0
 			subPhase += 1
 		end	
 	end
 	
 	if findLine == 1 then
-		when ground[0] &lt; EDGE and ground[1] > EDGE  do
+		if horizontal[0] > 3000 then
+			motor.left.target = TARGET
+			motor.right.target = -TARGET
+		elseif horizontal[4] > 3000 then
+			motor.left.target = -TARGET
+			motor.right.target = TARGET
+		else
+			if ground[0] &lt; EDGE and ground[1] > EDGE  then
 			motor.left.target = TARGET/2
 			motor.right.target = TARGET
 		end
 		
-		when ground[0] > EDGE and ground[1] &lt; EDGE do
+		if  ground[0] > EDGE and ground[1] &lt; EDGE then
 			motor.left.target = TARGET
 			motor.right.target = TARGET/2
 		end
 		
-		when ground[0] > EDGE and ground[1] > EDGE do
-			motor.left.target = 250
-			motor.right.target = 250
+		if ground[0] > EDGE and ground[1] > EDGE then
+			callsub Forward	
 		end
+		end
+		
+		
 		
 		if (ground[0] &lt; EDGE and ground[1] &lt; EDGE) and max > THRESH then
 			motor.left.target = 0
@@ -335,6 +375,15 @@ onevent prox
 	end
 	
 	if findWall == 1 then
+		if horizontal[0] > 4000 then
+			motor.left.target = TARGET
+			motor.right.target = -TARGET
+		elseif horizontal[4] > 4000 then
+			motor.left.target = -TARGET
+			motor.right.target = TARGET
+		else
+			callsub Forward
+		end
 		if max > THRESH then
 			motor.left.target = 0
 			motor.right.target = 0
@@ -356,7 +405,7 @@ onevent prox
 	
 sub Forward
 	motor.left.target = FTARGET
-	motor.right.target = FTARGET
+	motor.right.target = FTARGET - 5 
 	
 sub Left
 	motor.left.target = -TARGET
@@ -387,26 +436,16 @@ sub Scan2
 	end
 	subPhase += 1
 	
-sub Scan
-	scanResult = horizontal[1:3]
-	if horizontal[1] > THRESHSIDE then
-			scanResult[0] = 32
-		else
-			scanResult[0] = 0	
-		end
-		
-		if horizontal[2] > THRESH then
-			scanResult[1] = 32
-		else
-			scanResult[1] = 0	
-		end
-		
-		if horizontal[3] > THRESHSIDE then
-			scanResult[2] = 32
-		else
-			scanResult[2] = 0	
-		end
-		
+sub Scan3
+	fLED = horizontal[1:3]
+	if fLED[0] > fLED[1] and fLED[0] > fLED[2] then
+		fLED = [32, 0, 0]
+	elseif fLED[1] > fLED[0] and fLED[1] > fLED[2] then
+		fLED = [0, 32, 0]
+	elseif fLED[2] > fLED[0] and fLED[2] > fLED[1] then
+		fLED = [0, 0, 32]
+	end
+	call leds.top(fLED[0], fLED[1], fLED[2])
 	subPhase += 1
 
 onevent timer0
@@ -416,13 +455,15 @@ onevent timer0
 	timer.period[0] = 0
 	
 onevent timer1
-	if beep == 0 then
+	if beep %2 == 0 then
 		call sound.play(0)
 		call leds.top(32, 0, 0)
-		beep = 1
+		call leds.circle(32, 32, 32, 32, 32, 32, 32, 32)
+		beep -= 1
 	else
+		call leds.circle(0, 0, 0, 0, 0, 0, 0, 0)
 		call leds.top(0, 0, 0)
-		beep = 0
+		beep -= 1
 	end
 </node>
 
